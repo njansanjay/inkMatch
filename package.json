@@ -1,0 +1,41 @@
+{
+  "name": "inkprint",
+  "version": "2.0.0",
+  "description": "InkMatch private, on-device handwriting comparison",
+  "main": "desktop/main.cjs",
+  "scripts": {
+    "start": "electron .",
+    "package:win": "electron-builder --win nsis portable",
+    "android:test": "cd android && gradlew.bat connectedAndroidTest",
+    "android:apk": "cd android && gradlew.bat assembleDebug",
+    "android:release": "cd android && gradlew.bat assembleRelease"
+  },
+  "devDependencies": {
+    "electron": "^44.9.1",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "com.inkprint.desktop",
+    "productName": "InkMatch",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "index.html",
+      "styles.css",
+      "app.js",
+      "desktop/**"
+    ],
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true
+    }
+  }
+}

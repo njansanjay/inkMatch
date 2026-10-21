@@ -1,0 +1,16 @@
+node_modules/
+release/
+.dist/
+www/
+android/.gradle/
+android/local.properties
+android/build/
+android/app/build/
+android/keystore.properties
+android/*.jks
+android/*.keystore
+.env
+.env.*
+!.env.example
+auth/
+android/app/google-services.json
