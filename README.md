@@ -12,8 +12,8 @@ images are never uploaded.
    Firebase project.
 2. Add the SHA-1 fingerprint for the release signing key to the Android app's
    Firebase settings: `3D:C3:A9:5C:E0:68:03:74:33:FA:56:3E:9D:1A:53:93:7B:8E:69:B8`.
-3. Enable **Google** and **Email/Password** as providers in Firebase
-   Authentication.
+3. In Firebase Console, open **Authentication** and complete its initial
+   setup. Under **Sign-in method**, enable **Email/Password** and **Google**.
 4. Create or select a **Web application** OAuth client for Firebase Auth, then
    download an updated `google-services.json`. It must include this Android
    app and the Web OAuth client.
@@ -40,7 +40,7 @@ as above, and run:
 
 The installable, signed release APK is written to
 `android/app/build/outputs/apk/release/app-release.apk`. Android release
-version `2.0.0` uses version code `3` so it can update the earlier published
+version `2.0.2` uses version code `5` so it can update the earlier published
 APK. The signing key must remain the same for users to install updates.
 
 Run `npm run android:test` with an Android emulator or device connected to run
@@ -50,6 +50,16 @@ The app does not store account passwords. Each account's five most recent
 comparison scores, trait values, and small JPEG thumbnails are stored in that
 account's private app storage on the device; original images are not copied
 into history. Deleting a history entry also deletes its thumbnails.
+
+The comparison percentage is an experimental visual-similarity score, not a
+probability or a determination of writer identity. It compares coarse
+handwriting-image features and allows a small alignment adjustment; different
+words, writing conditions, and image quality can still change the result.
+
+If email sign-in reports that the provider is disabled, enable **Email/Password**
+under **Firebase Console > Authentication > Sign-in method**. This provider
+setting is managed by Firebase and cannot be enabled by changing or rebuilding
+the Android app.
 
 ## Windows desktop app
 

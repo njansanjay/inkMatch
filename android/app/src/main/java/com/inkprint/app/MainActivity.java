@@ -4,8 +4,11 @@ import android.content.Context;
 import android.content.res.ColorStateList;
 import android.graphics.Bitmap;
 import android.graphics.BitmapFactory;
+import android.graphics.Canvas;
 import android.graphics.Color;
 import android.graphics.Matrix;
+import android.graphics.Paint;
+import android.graphics.Path;
 import android.graphics.Typeface;
 import android.graphics.drawable.GradientDrawable;
 import android.media.ExifInterface;
@@ -20,6 +23,7 @@ import android.view.Window;
 import android.view.WindowManager;
 import android.widget.ImageView;
 import android.widget.EditText;
+import android.widget.FrameLayout;
 import android.widget.LinearLayout;
 import android.widget.ProgressBar;
 import android.widget.ScrollView;
@@ -28,6 +32,7 @@ import android.widget.Toast;
 import android.text.InputType;
 
 import androidx.activity.EdgeToEdge;
+import androidx.activity.OnBackPressedCallback;
 import androidx.activity.result.ActivityResultLauncher;
 import androidx.activity.result.PickVisualMediaRequest;
 import androidx.activity.result.contract.ActivityResultContracts;
@@ -83,6 +88,7 @@ public final class MainActivity extends AppCompatActivity {
     private CredentialManager credentialManager;
     private FirebaseAuth firebaseAuth;
     private FirebaseAuth.AuthStateListener authStateListener;
+    private OnBackPressedCallback screenBackCallback;
     private LinearLayout content;
     private TextView authMessage;
     private View authButton;
@@ -106,6 +112,20 @@ public final class MainActivity extends AppCompatActivity {
         configureSystemBars();
         credentialManager = CredentialManager.create(this);
         initializeFirebase();
+        screenBackCallback = new OnBackPressedCallback(false) {
+            @Override
+            public void handleOnBackPressed() {
+                FirebaseUser user = firebaseAuth == null ? null : firebaseAuth.getCurrentUser();
+                if (user == null) {
+                    screen = AppScreen.SIGN_IN;
+                } else {
+                    screen = screen == AppScreen.CHANGE_PASSWORD
+                            ? AppScreen.PROFILE : AppScreen.COMPARE;
+                }
+                renderCurrentScreen();
+            }
+        };
+        getOnBackPressedDispatcher().addCallback(this, screenBackCallback);
         restoreSamples(savedInstanceState);
 
         if (firebaseAuth != null) {
@@ -157,6 +177,7 @@ public final class MainActivity extends AppCompatActivity {
                     renderSignIn();
                     break;
             }
+            screenBackCallback.setEnabled(screen != AppScreen.SIGN_IN);
             return;
         }
         switch (screen) {
@@ -174,6 +195,7 @@ public final class MainActivity extends AppCompatActivity {
                 renderComparisonApp(user);
                 break;
         }
+        screenBackCallback.setEnabled(screen != AppScreen.COMPARE);
     }
 
     private void renderSignIn() {
@@ -462,9 +484,17 @@ public final class MainActivity extends AppCompatActivity {
 
     private String emailAuthError(@Nullable Exception exception, String action) {
         String detail = exception == null ? "" : String.valueOf(exception.getMessage());
-        if (detail.contains("CONFIGURATION_NOT_FOUND")
-                || detail.contains("operation is not allowed")) {
-            return "Email/password sign-in is disabled. Enable it in Firebase Authentication.";
+        String code = exception instanceof com.google.firebase.auth.FirebaseAuthException
+                ? ((com.google.firebase.auth.FirebaseAuthException) exception).getErrorCode() : "";
+        if ("ERROR_OPERATION_NOT_ALLOWED".equals(code)
+                || detail.toLowerCase(java.util.Locale.ROOT).contains("operation is not allowed")) {
+            return "Email/Password sign-in is disabled for this Firebase project. In Firebase Console, open Authentication > Sign-in method and enable Email/Password.";
+        }
+        if (detail.contains("CONFIGURATION_NOT_FOUND")) {
+            return "Firebase Authentication isn't configured for this project. In Firebase Console, open Authentication, finish its setup, and enable the Email/Password provider.";
+        }
+        if (detail.contains("API key not valid") || detail.contains("API_KEY_INVALID")) {
+            return "Firebase rejected the Android API key. Download the current google-services.json for this Firebase project and rebuild the app.";
         }
         if (detail.contains("invalid-email")) return "Enter a valid email address.";
         if (detail.contains("user-not-found") || detail.contains("no user record")) {
@@ -621,8 +651,11 @@ public final class MainActivity extends AppCompatActivity {
         addSpace(content, 22);
 
         LinearLayout sampleRow = new LinearLayout(this);
-        sampleRow.setGravity(Gravity.CENTER_VERTICAL);
+        boolean stackSamples = getResources().getConfiguration().screenWidthDp < 600;
+        sampleRow.setOrientation(stackSamples ? LinearLayout.VERTICAL : LinearLayout.HORIZONTAL);
+        sampleRow.setGravity(stackSamples ? Gravity.TOP : Gravity.CENTER_VERTICAL);
         addSampleCard(sampleRow, 0);
+        if (stackSamples) addSpace(sampleRow, 12);
         addSampleCard(sampleRow, 1);
         content.addView(sampleRow, matchWrap());
         addSpace(content, 20);
@@ -734,7 +767,7 @@ public final class MainActivity extends AppCompatActivity {
         String details = entry.firstName + " vs " + entry.secondName
                 + "\n" + AnalysisHistoryStore.formatDate(entry.createdAt)
                 + "\n\nOverall shape patterns: " + Math.round(entry.shape * 100f) + "%"
-                + "\nInk & stroke weight: " + Math.round(entry.weight * 100f) + "%"
+                + "\nStroke continuity: " + Math.round(entry.weight * 100f) + "%"
                 + "\nWriting density: " + Math.round(entry.density * 100f) + "%"
                 + "\nSample proportions: " + Math.round(entry.proportions * 100f) + "%"
                 + "\n\nThis is a visual estimate, not proof of authorship.";
@@ -955,9 +988,9 @@ public final class MainActivity extends AppCompatActivity {
     }
 
     private String historyResultTitle(float score) {
-        if (score >= 78f) return "Likely same person";
-        if (score >= 55f) return "Possibly same person";
-        return "Different person";
+        if (score >= 78f) return "High visual similarity";
+        if (score >= 55f) return "Moderate visual similarity";
+        return "Low visual similarity";
     }
 
     private LinearLayout createSignedInHeader() {
@@ -966,10 +999,15 @@ public final class MainActivity extends AppCompatActivity {
         TextView logo = text("InkMatch", 21, COLOR_INK, true);
         logo.setLetterSpacing(-0.04f);
         header.addView(logo, new LinearLayout.LayoutParams(0, dp(43), 1f));
-        TextView profile = actionButton("○", Color.WHITE, COLOR_MUTED);
-        profile.setTextSize(19);
+        ProfileIconView profile = new ProfileIconView(this);
+        profile.setBackground(rounded(COLOR_CARD, 20, COLOR_BORDER));
+        profile.setPadding(dp(9), dp(9), dp(9), dp(9));
+        profile.setMinimumWidth(dp(40));
+        profile.setMinimumHeight(dp(40));
         profile.setContentDescription("Open profile");
-        header.addView(profile, wrap());
+        profile.setClickable(true);
+        profile.setFocusable(true);
+        header.addView(profile, new LinearLayout.LayoutParams(dp(40), dp(40)));
         profile.setOnClickListener(view -> {
             screen = AppScreen.PROFILE;
             renderCurrentScreen();
@@ -989,30 +1027,45 @@ public final class MainActivity extends AppCompatActivity {
         LinearLayout headingText = column();
         TextView sampleTitle = text(index == 0 ? "First sample" : "Second sample", 15, COLOR_INK, true);
         headingText.addView(sampleTitle);
-        headingText.addView(text(
+        TextView description = text(
                 index == 0 ? "Your reference handwriting" : "The handwriting to compare",
-                12, COLOR_MUTED, false));
+                12, COLOR_MUTED, false);
+        description.setSingleLine(true);
+        description.setEllipsize(android.text.TextUtils.TruncateAt.END);
+        headingText.addView(description);
         LinearLayout.LayoutParams headingTextParams = new LinearLayout.LayoutParams(0, -2, 1f);
         headingTextParams.leftMargin = dp(11);
         heading.addView(headingText, headingTextParams);
         if (sample != null && sample.bitmap != null) {
-            TextView remove = actionButton("Remove", Color.WHITE, COLOR_MUTED);
-            remove.setTextSize(12);
-            remove.setBackground(rounded(Color.WHITE, 9, COLOR_BORDER));
-            heading.addView(remove, wrap());
-            remove.setOnClickListener(view -> clearSample(index));
+            View spacer = new View(this);
+            heading.addView(spacer, new LinearLayout.LayoutParams(dp(40), dp(35)));
         }
         sampleCard.addView(heading);
         addSpace(sampleCard, 13);
 
         if (sample != null && sample.bitmap != null) {
+            FrameLayout previewFrame = new FrameLayout(this);
             ImageView preview = new ImageView(this);
             preview.setImageBitmap(sample.bitmap);
             preview.setScaleType(ImageView.ScaleType.CENTER_CROP);
             preview.setBackground(rounded(Color.rgb(245, 246, 243), 10, Color.TRANSPARENT));
             preview.setContentDescription((index == 0 ? "First" : "Second") + " handwriting sample preview");
             preview.setClipToOutline(true);
-            sampleCard.addView(preview, new LinearLayout.LayoutParams(-1, dp(104)));
+            previewFrame.addView(preview, new FrameLayout.LayoutParams(-1, dp(132)));
+            TextView remove = text("×", 23, COLOR_INK, false);
+            remove.setGravity(Gravity.CENTER);
+            remove.setBackground(rounded(COLOR_CARD, 18, COLOR_BORDER));
+            remove.setContentDescription(
+                    "Remove " + (index == 0 ? "first" : "second") + " sample photo");
+            remove.setClickable(true);
+            remove.setFocusable(true);
+            FrameLayout.LayoutParams removeParams =
+                    new FrameLayout.LayoutParams(dp(36), dp(36), Gravity.TOP | Gravity.RIGHT);
+            removeParams.setMargins(0, dp(6), dp(6), 0);
+            remove.setElevation(dp(3));
+            previewFrame.addView(remove, removeParams);
+            remove.setOnClickListener(view -> clearSample(index));
+            sampleCard.addView(previewFrame, matchWrap());
             TextView fileName = text(sample.displayName, 12, COLOR_MUTED, false);
             fileName.setSingleLine(true);
             fileName.setEllipsize(android.text.TextUtils.TruncateAt.MIDDLE);
@@ -1030,8 +1083,13 @@ public final class MainActivity extends AppCompatActivity {
             sampleCard.addView(choose, new LinearLayout.LayoutParams(-1, dp(106)));
             choose.setOnClickListener(view -> pickImage(index));
         }
-        LinearLayout.LayoutParams params = new LinearLayout.LayoutParams(0, -2, 1f);
-        params.setMargins(dp(index == 0 ? 0 : 5), 0, dp(index == 0 ? 5 : 0), 0);
+        LinearLayout.LayoutParams params;
+        if (parent.getOrientation() == LinearLayout.VERTICAL) {
+            params = matchWrap();
+        } else {
+            params = new LinearLayout.LayoutParams(0, -2, 1f);
+            params.setMargins(dp(index == 0 ? 0 : 5), 0, dp(index == 0 ? 5 : 0), 0);
+        }
         parent.addView(sampleCard, params);
     }
 
@@ -1055,13 +1113,13 @@ public final class MainActivity extends AppCompatActivity {
         String description;
         if (result.score >= 78f) {
             title = "Many traits look alike";
-            description = "The samples share several broad visual patterns.";
+            description = "The samples share more of the visual patterns measured here.";
         } else if (result.score >= 55f) {
             title = "Some traits look alike";
-            description = "The samples show a mix of similar and different patterns.";
+            description = "The measured patterns show both similarities and differences.";
         } else {
             title = "Few traits look alike";
-            description = "The samples differ across several broad visual patterns.";
+            description = "The samples share fewer of the visual patterns measured here.";
         }
         scoreText.addView(text(title, 18, COLOR_INK, true));
         addSpace(scoreText, 5);
@@ -1077,12 +1135,12 @@ public final class MainActivity extends AppCompatActivity {
         resultCard.addView(text("What we compared", 14, COLOR_INK, true));
         addSpace(resultCard, 11);
         addTrait(resultCard, "Overall shape patterns", result.shape);
-        addTrait(resultCard, "Ink & stroke weight", result.weight);
+        addTrait(resultCard, "Stroke continuity", result.weight);
         addTrait(resultCard, "Writing density", result.density);
         addTrait(resultCard, "Sample proportions", result.proportions);
 
         TextView disclaimer = text(
-                "This experimental estimate is not a calibrated probability or forensic conclusion. Different words, image quality and writing conditions can affect the result.",
+                "This experimental image-similarity score is not a calibrated probability or a determination of writer identity. Different words, image quality and writing conditions can change the score.",
                 11, COLOR_MUTED, false);
         disclaimer.setBackground(rounded(Color.rgb(247, 248, 245), 9, Color.TRANSPARENT));
         disclaimer.setPadding(dp(11), dp(11), dp(11), dp(11));
@@ -1414,6 +1472,30 @@ public final class MainActivity extends AppCompatActivity {
         super.onDestroy();
     }
 
+    private final class ProfileIconView extends View {
+        private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+
+        ProfileIconView(Context context) {
+            super(context);
+        }
+
+        @Override
+        protected void onDraw(Canvas canvas) {
+            super.onDraw(canvas);
+            float centerX = getWidth() / 2f;
+            float centerY = getHeight() / 2f;
+            paint.setColor(COLOR_MUTED);
+            paint.setStyle(Paint.Style.FILL);
+            canvas.drawCircle(centerX, centerY - dp(4), dp(3.5f), paint);
+            Path shoulders = new Path();
+            shoulders.moveTo(centerX - dp(7), centerY + dp(7));
+            shoulders.cubicTo(centerX - dp(7), centerY + dp(1),
+                    centerX + dp(7), centerY + dp(1), centerX + dp(7), centerY + dp(7));
+            shoulders.close();
+            canvas.drawPath(shoulders, paint);
+        }
+    }
+
     private static final class Sample {
         final Uri uri;
         Bitmap bitmap;
@@ -1470,7 +1552,7 @@ public final class MainActivity extends AppCompatActivity {
             canvas.drawText(String.valueOf(Math.round(score)), centerX, textY, paint);
             paint.setColor(COLOR_MUTED);
             paint.setTextSize(dp(10));
-            canvas.drawText("visual match", centerX, centerY + dp(27), paint);
+            canvas.drawText("similarity", centerX, centerY + dp(27), paint);
         }
     }
 }

@@ -53,6 +53,11 @@ public class NativeAppTest {
                 ViewGroup signup = activity.findViewById(android.R.id.content);
                 assertTrue(containsText(signup, "Create an Account"));
                 assertEquals(4, countInputs(signup));
+                activity.getOnBackPressedDispatcher().onBackPressed();
+                ViewGroup returnedSignIn = activity.findViewById(android.R.id.content);
+                assertTrue(containsText(returnedSignIn, "Welcome back"));
+                findText(returnedSignIn, "New to InkMatch?  Create an account").performClick();
+                signup = activity.findViewById(android.R.id.content);
                 findText(signup, "Already have an account?  Sign in").performClick();
                 ViewGroup signIn = activity.findViewById(android.R.id.content);
                 findText(signIn, "Forgot password?").performClick();
@@ -111,6 +116,30 @@ public class NativeAppTest {
         assertEquals(1f, result.weight, 0.001f);
         assertEquals(1f, result.density, 0.001f);
         assertEquals(1f, result.proportions, 0.001f);
+    }
+
+    @Test
+    public void smallGridTranslationDoesNotLowerSimilarityForMatchingWriting() {
+        float[] originalGrid = new float[160];
+        originalGrid[3 * 16 + 4] = 0.8f;
+        originalGrid[3 * 16 + 5] = 0.4f;
+        originalGrid[4 * 16 + 5] = 1f;
+        originalGrid[5 * 16 + 6] = 0.6f;
+        float[] translatedGrid = new float[160];
+        for (int y = 0; y < 9; y++) {
+            for (int x = 0; x < 15; x++) {
+                translatedGrid[(y + 1) * 16 + x + 1] = originalGrid[y * 16 + x];
+            }
+        }
+        HandwritingAnalyzer.Features original =
+                new HandwritingAnalyzer.Features(originalGrid, 0.4f, 1.8f, 0.6f);
+        HandwritingAnalyzer.Features translated =
+                new HandwritingAnalyzer.Features(translatedGrid, 0.4f, 1.8f, 0.6f);
+
+        HandwritingAnalyzer.Comparison result = HandwritingAnalyzer.compare(original, translated);
+
+        assertEquals(100f, result.score, 0.001f);
+        assertEquals(1f, result.shape, 0.001f);
     }
 
     @Test

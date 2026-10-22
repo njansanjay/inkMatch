@@ -96,11 +96,12 @@ final class HandwritingAnalyzer {
     }
 
     static Comparison compare(Features first, Features second) {
-        float shape = vectorSimilarity(first.grid, second.grid);
+        float shape = alignedVectorSimilarity(first.grid, second.grid);
         float weight = scalarSimilarity(first.strokeWeight, second.strokeWeight);
         float density = scalarSimilarity(first.density, second.density);
         float proportions = scalarSimilarity(first.aspect, second.aspect);
-        float score = 100f * (shape * 0.55f + weight * 0.18f + density * 0.14f + proportions * 0.13f);
+        float score = 100f * (shape * 0.70f + density * 0.12f
+                + proportions * 0.12f + weight * 0.06f);
         return new Comparison(score, shape, weight, density, proportions);
     }
 
@@ -118,17 +119,45 @@ final class HandwritingAnalyzer {
         return 255;
     }
 
-    private static float vectorSimilarity(float[] first, float[] second) {
-        float dot = 0f;
-        float normFirst = 0f;
-        float normSecond = 0f;
-        for (int i = 0; i < first.length; i++) {
-            dot += first[i] * second[i];
-            normFirst += first[i] * first[i];
-            normSecond += second[i] * second[i];
+    private static float alignedVectorSimilarity(float[] first, float[] second) {
+        float best = 0f;
+        float totalEnergyFirst = sumSquares(first);
+        float totalEnergySecond = sumSquares(second);
+        if (totalEnergyFirst == 0f || totalEnergySecond == 0f) return 0f;
+        for (int shiftY = -1; shiftY <= 1; shiftY++) {
+            for (int shiftX = -1; shiftX <= 1; shiftX++) {
+                float dot = 0f;
+                float normFirst = 0f;
+                float normSecond = 0f;
+                for (int y = 0; y < GRID_HEIGHT; y++) {
+                    int otherY = y + shiftY;
+                    for (int x = 0; x < GRID_WIDTH; x++) {
+                        int index = y * GRID_WIDTH + x;
+                        float firstValue = first[index];
+                        int otherX = x + shiftX;
+                        if (otherX < 0 || otherX >= GRID_WIDTH
+                                || otherY < 0 || otherY >= GRID_HEIGHT) continue;
+                        float alignedValue = second[otherY * GRID_WIDTH + otherX];
+                        dot += firstValue * alignedValue;
+                        normFirst += firstValue * firstValue;
+                        normSecond += alignedValue * alignedValue;
+                    }
+                }
+                if (normFirst == 0f || normSecond == 0f) continue;
+                float coverageFirst = Math.min(1f, normFirst / totalEnergyFirst);
+                float coverageSecond = Math.min(1f, normSecond / totalEnergySecond);
+                float similarity = dot / (float) Math.sqrt(normFirst * normSecond);
+                best = Math.max(best, clamp(similarity) * (float) Math.sqrt(
+                        coverageFirst * coverageSecond));
+            }
         }
-        if (normFirst == 0f || normSecond == 0f) return 0f;
-        return clamp(dot / (float) Math.sqrt(normFirst * normSecond));
+        return best;
+    }
+
+    private static float sumSquares(float[] values) {
+        float sum = 0f;
+        for (float value : values) sum += value * value;
+        return sum;
     }
 
     private static float scalarSimilarity(float first, float second) {
